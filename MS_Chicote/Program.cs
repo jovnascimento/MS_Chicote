@@ -1,0 +1,71 @@
+﻿using RabbitMQ.Client;
+using RabbitMQ.Client.Events;
+using System;
+using System.Text;
+using Npgsql;
+
+class Program
+{
+    //Npgsql
+    private static string connstring = String.Format("Server={0};Port={1};" +
+        "User Id={2};Password={3};Database={4};",
+        "localhost", 5432, "postgres",
+        "password", "RFID");
+    private static NpgsqlConnection conn;
+    private string sql;
+    private NpgsqlCommand cmd;
+
+    private static void Insert_Tag(string sql)
+    {
+        conn = new NpgsqlConnection(connstring);
+        conn.Open();
+
+        string dml = sql;
+
+        using (NpgsqlCommand cmd = new NpgsqlCommand(dml, conn))
+        {
+            try
+            {
+                cmd.ExecuteNonQuery();
+                conn.Close();
+            }
+            catch (Exception e)
+            {
+                conn.Close();
+                Console.WriteLine("Erro: " + e);
+            }
+        }
+    }
+
+    public static void Main()
+    {
+        var factory = new ConnectionFactory()
+        {
+            HostName = "localhost"
+        };
+        using (var connection = factory.CreateConnection())
+        using (var channel = connection.CreateModel())
+        {
+            channel.QueueDeclare(queue: "tags",
+                                 durable: false,
+                                 exclusive: false,
+                                 autoDelete: false,
+                                 arguments: null);
+
+            var consumer = new EventingBasicConsumer(channel);
+            consumer.Received += (model, ea) =>
+            {
+                var body = ea.Body.ToArray();
+                var message = Encoding.UTF8.GetString(body);
+                Insert_Tag(message);
+                Console.WriteLine(" [x] Received {0}", message);
+            };
+            channel.BasicConsume(queue: "tags",
+                                 autoAck: true,
+                                 consumer: consumer);
+
+            Console.WriteLine(" Press [enter] to exit.");
+            Console.ReadLine();
+        }
+    }
+}
